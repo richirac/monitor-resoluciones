@@ -1,78 +1,50 @@
-import requests
-from bs4 import BeautifulSoup
-import hashlib
-import os
-import smtplib
-from email.mime.text import MIMEText
-import re
+name: Monitor Resoluciones
 
-URL = "https://fedepatin.org.co/resoluciones-artistico/#1738812804586-c49ea4e1-e022"
-HASH_FILE = "last_hash.txt"
-TEXT_FILE = "last_text.txt"
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # cada 15 minutos
+  workflow_dispatch:
 
-EMAIL_FROM = os.getenv("EMAIL_FROM")
-EMAIL_TO = os.getenv("EMAIL_TO")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
+permissions:
+  contents: write
 
-def get_section_text():
-    try:
-        response = requests.get(URL, timeout=15)
-        response.raise_for_status()
-    except Exception as e:
-        print(f"❌ Error al acceder a la página: {e}")
-        return ""
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    section = soup.find("div", {"id": "1738812804586-c49ea4e1-e022"})
-    if not section:
-        print("⚠️ No se encontró la sección esperada en la página")
-        return ""
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-    section_text = section.get_text(separator=" ", strip=True)
-    section_text = re.sub(r"\s+", " ", section_text).strip()
-    return section_text
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
 
-def compute_hash(content: str) -> str:
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    - name: Install dependencies
+      run: pip install requests beautifulsoup4
 
-def send_email(subject, body):
-    if not (EMAIL_FROM and EMAIL_TO and EMAIL_PASS):
-        print("⚠️ Configuración de correo no encontrada en los secrets")
-        return
-    try:
-        msg = MIMEText(body, "plain", "utf-8")
-        msg["Subject"] = subject
-        msg["From"] = EMAIL_FROM
-        msg["To"] = EMAIL_TO
+    - name: Run monitor script
+      run: python monitor_resoluciones.py
 
-        with smtplib.SMTP_SSL("smtp.mail.yahoo.com", 465) as server:
-            server.login(EMAIL_FROM, EMAIL_PASS)
-            server.sendmail(EMAIL_FROM, [EMAIL_TO], msg.as_string())
-        print("📧 Correo enviado correctamente")
-    except Exception as e:
-        print(f"❌ Error enviando correo: {e}")
+    - name: Show diff if changes
+      run: |
+        if [ -f last_text.txt ]; then
+          git add last_text.txt last_hash.txt || true
+          git diff --cached || echo "No hay cambios para mostrar"
+          git reset
+        else
+          echo "⚠️ No existe last_text.txt (puede que el script no haya generado contenido)"
+        fi
 
-def main():
-    section_text = get_section_text()
-
-    # 🔑 Siempre guardar last_text.txt aunque esté vacío
-    with open(TEXT_FILE, "w", encoding="utf-8") as f:
-        f.write(section_text)
-
-    new_hash = compute_hash(section_text)
-
-    old_hash = None
-    if os.path.exists(HASH_FILE):
-        with open(HASH_FILE, "r", encoding="utf-8") as f:
-            old_hash = f.read().strip()
-
-    if old_hash != new_hash:
-        print("🔔 Cambio detectado en la página")
-        send_email("Cambio detectado en Resoluciones Artístico", "Se detectó un cambio en la página.")
-        with open(HASH_FILE, "w", encoding="utf-8") as f:
-            f.write(new_hash)
-    else:
-        print("✅ No hubo cambios detectados")
-
-if __name__ == "__main__":
-    main()
+    - name: Commit changes if detected
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        [ -f last_text.txt ] && git add last_text.txt
+        [ -f last_hash.txt ] && git add last_hash.txt
+        git diff --cached --quiet || git commit -m "Update last_text and last_hash $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+        git pull --rebase origin main
+        git push origin main
