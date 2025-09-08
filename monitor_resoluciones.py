@@ -14,6 +14,9 @@ EMAIL_FROM = os.getenv("EMAIL_FROM")
 EMAIL_TO = os.getenv("EMAIL_TO")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
 def get_section_text():
     try:
         response = requests.get(URL, timeout=15)
@@ -52,10 +55,25 @@ def send_email(subject, body):
     except Exception as e:
         print(f"❌ Error enviando correo: {e}")
 
+def send_telegram(message: str):
+    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
+        print("⚠️ No hay configuración de Telegram en los secrets")
+        return
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+        resp = requests.post(url, data=payload)
+        if resp.status_code == 200:
+            print("📲 Mensaje enviado a Telegram")
+        else:
+            print(f"❌ Error enviando a Telegram: {resp.text}")
+    except Exception as e:
+        print(f"❌ Excepción enviando a Telegram: {e}")
+
 def main():
     section_text = get_section_text()
 
-    # 🔑 Siempre guardar last_text.txt aunque esté vacío
+    # Guardar last_text.txt aunque esté vacío
     with open(TEXT_FILE, "w", encoding="utf-8") as f:
         f.write(section_text)
 
@@ -69,6 +87,7 @@ def main():
     if old_hash != new_hash:
         print("🔔 Cambio detectado en la página")
         send_email("Cambio detectado en Resoluciones Artístico", "Se detectó un cambio en la página.")
+        send_telegram("🔔 Cambio detectado en la página de Resoluciones Artístico")
         with open(HASH_FILE, "w", encoding="utf-8") as f:
             f.write(new_hash)
     else:
