@@ -69,4 +69,10 @@ def main():
     if old_hash != new_hash:
         print("🔔 Cambio detectado en la página")
         send_email("Cambio detectado en Resoluciones Artístico", "Se detectó un cambio en la página.")
-        with open(HASH_FILE,_
+        with open(HASH_FILE, "w", encoding="utf-8") as f:
+            f.write(new_hash)
+    else:
+        print("✅ No hubo cambios detectados")
+
+if __name__ == "__main__":
+    main()
