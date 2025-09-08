@@ -1,93 +1,72 @@
 import requests
 from bs4 import BeautifulSoup
 import hashlib
+import os
 import smtplib
 from email.mime.text import MIMEText
-import os
 import re
 
-# URL a monitorear
 URL = "https://fedepatin.org.co/resoluciones-artistico/#1738812804586-c49ea4e1-e022"
 HASH_FILE = "last_hash.txt"
 TEXT_FILE = "last_text.txt"
 
-# Variables de correo desde GitHub Secrets
-EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_FROM = os.getenv("EMAIL_FROM")
+EMAIL_TO = os.getenv("EMAIL_TO")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
-TO_EMAIL = os.getenv("TO_EMAIL")
-
 
 def get_section_text():
     try:
-        response = requests.get(URL, timeout=20)
+        response = requests.get(URL, timeout=15)
         response.raise_for_status()
     except Exception as e:
-        print("Error descargando la página:", e)
-        return None
+        print(f"❌ Error al acceder a la página: {e}")
+        return ""
 
     soup = BeautifulSoup(response.text, "html.parser")
-    section = soup.select_one("#pg-1738812804586-c49ea4e1-e022")
-
+    section = soup.find("div", {"id": "1738812804586-c49ea4e1-e022"})
     if not section:
-        section_text = soup.get_text()
-    else:
-        section_text = section.get_text()
+        print("⚠️ No se encontró la sección esperada en la página")
+        return ""
 
-    # Normalizar el texto: quitar espacios múltiples, saltos de línea, tabs
+    section_text = section.get_text(separator=" ", strip=True)
     section_text = re.sub(r"\s+", " ", section_text).strip()
-
     return section_text
 
+def compute_hash(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-def get_section_hash(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def send_email(message):
+def send_email(subject, body):
+    if not (EMAIL_FROM and EMAIL_TO and EMAIL_PASS):
+        print("⚠️ Configuración de correo no encontrada en los secrets")
+        return
     try:
-        msg = MIMEText(message)
-        msg["Subject"] = "⚠️ Resoluciones Artístico actualizadas"
-        msg["From"] = EMAIL_USER
-        msg["To"] = TO_EMAIL
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = EMAIL_FROM
+        msg["To"] = EMAIL_TO
 
-        with smtplib.SMTP("smtp.mail.yahoo.com", 587) as server:
-            server.starttls()
-            server.login(EMAIL_USER, EMAIL_PASS)
-            server.sendmail(EMAIL_USER, TO_EMAIL, msg.as_string())
-        print("Correo enviado correctamente.")
+        with smtplib.SMTP_SSL("smtp.mail.yahoo.com", 465) as server:
+            server.login(EMAIL_FROM, EMAIL_PASS)
+            server.sendmail(EMAIL_FROM, [EMAIL_TO], msg.as_string())
+        print("📧 Correo enviado correctamente")
     except Exception as e:
-        print("Error enviando correo:", e)
-
+        print(f"❌ Error enviando correo: {e}")
 
 def main():
     section_text = get_section_text()
-    if section_text is None:
-        print("No se pudo obtener el texto. Se cancela la ejecución.")
-        return
 
-    new_hash = get_section_hash(section_text)
+    # 🔑 Siempre guardar last_text.txt aunque esté vacío
+    with open(TEXT_FILE, "w", encoding="utf-8") as f:
+        f.write(section_text)
 
-    try:
+    new_hash = compute_hash(section_text)
+
+    old_hash = None
+    if os.path.exists(HASH_FILE):
         with open(HASH_FILE, "r", encoding="utf-8") as f:
             old_hash = f.read().strip()
-    except FileNotFoundError:
-        old_hash = ""
 
-    if new_hash != old_hash:
-        send_email(f"La sección de resoluciones artísticas cambió: {URL}")
-
-        # Guardar nuevo hash
-        with open(HASH_FILE, "w", encoding="utf-8") as f:
-            f.write(new_hash)
-
-        # Guardar el texto actual para comparar después
-        with open(TEXT_FILE, "w", encoding="utf-8") as f:
-            f.write(section_text)
-
-        print("Cambio detectado y guardado en last_text.txt")
-    else:
-        print("No hubo cambios detectados.")
-
-
-if __name__ == "__main__":
-    main()
+    if old_hash != new_hash:
+        print("🔔 Cambio detectado en la página")
+        send_email("Cambio detectado en Resoluciones Artístico", "Se detectó un cambio en la página.")
+        with open(HASH_FILE,_
