@@ -1,31 +1,33 @@
-# Probando workflow
-# Activando workflow
-
 name: Monitor Resoluciones
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # cada 30 minutos
+    - cron: "*/15 * * * *"   # cada 15 minutos
   workflow_dispatch:
 
 jobs:
-  run-monitor:
+  monitor:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
 
-      - name: Install dependencies
-        run: pip install requests beautifulsoup4
+    - name: Install dependencies
+      run: pip install requests beautifulsoup4
 
-      - name: Run script
-        run: python monitor_resoluciones.py
-        env:
-          EMAIL_USER: ${{ secrets.EMAIL_USER }}
-          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+    - name: Run monitor script
+      run: python monitor_resoluciones.py
+
+    - name: Commit changes if detected
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        git add last_text.txt last_hash.txt || true
+        git diff --cached --quiet || git commit -m "Update last_text and last_hash"
+        git push
